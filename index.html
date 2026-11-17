@@ -308,6 +308,8 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 .side>*{flex-shrink:0}
 .pl-prev{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
 .pl-prev:empty{display:none}
+.rg-row{display:flex;align-items:center;gap:8px}.rg-row .in[type=number]{width:84px}.rg-row .in[type=text]{width:84px}.rg-row .in[type=time]{width:130px}
+.win-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .st-rows{display:flex;flex-direction:column;gap:8px}
 .morebtn{align-self:flex-start;border:0;background:transparent;padding:2px 0;color:var(--focus);font-size:13.5px;font-weight:600;cursor:pointer}
 .morebtn:hover{text-decoration:underline}
@@ -318,6 +320,10 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 @media (max-width:860px){.st-row{grid-template-columns:20px 1fr 108px 28px}}
 .pl-row{display:grid;grid-template-columns:110px 110px 1fr;gap:8px;width:100%;padding:9px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
 .pl-row .pl-t{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-row .pl-day{grid-column:1/-1;font-size:12px;color:var(--text-3)}
+.pl-row .pl-day.warn{color:var(--warn)}
+.pl-sum{font-size:13px;color:var(--text);background:var(--wash);border-radius:8px;padding:8px 12px;width:100%}
+.fchip::before{display:none}.fchip{--c:var(--ink)}.fchip:disabled{opacity:.45;cursor:default}
 .pl-empty{font-size:13px;color:var(--warn)}
 @media (max-width:860px){.pl-row{grid-template-columns:1fr 1fr}.pl-row .pl-t{grid-column:1/-1}}
 
@@ -1079,7 +1085,7 @@ function evSpan(ev){var a=toMin(ev.start),b=toMin(ev.end);if(b==null||b<=a)b=a+6
 function busyOn(k,skip,extra){var out=[];
   Store.list().forEach(function(ev){if(skip[ev.id]||ev.allDay||!ev.start)return;if(expand(ev,k,k).length)out.push(evSpan(ev))});
   (extra[k]||[]).forEach(function(x){out.push(x)});return out.sort(function(x,y){return x[0]-y[0]})}
-function findSlot(dur,fromD,toD,skip,extra,after){var c=AUTO.cfg,F=toMin(c.from),T=toMin(c.to),g=+c.gap||0,now=new Date(),tk=todayKey();
+function findSlot(dur,fromD,toD,skip,extra,after,win){var c=AUTO.cfg,F=win?win.from:toMin(c.from),T=win?win.to:toMin(c.to),g=+c.gap||0,now=new Date(),tk=todayKey();
   for(var d=dayOnly(fromD),i=0;d<=toD&&i<60;d=addDays(d,1),i++){var k=keyOf(d);if(k<tk)continue;var t=F;
     if(k===tk)t=Math.max(t,Math.ceil((now.getHours()*60+now.getMinutes()+g)/10)*10);
     if(after){if(k<after.date)continue;if(k===after.date)t=Math.max(t,after.e+g)}
@@ -1179,89 +1185,157 @@ function placeSessions(dur,n,startK,byK,extraIn){var extra={},out=[];for(var k i
     if(!sl&&i>0)sl=findSlot(per,parseKey(startK),last,{},extra); // 다른 날이 없으면 같은 날이라도
     if(!sl)break;(extra[sl.date]=extra[sl.date]||[]).push([sl.s,sl.e]);out.push(sl);from=addDays(parseKey(sl.date),1);if(from>last)from=last}
   return out.sort(function(a,b){return (a.date+pad(a.s))<(b.date+pad(b.s))?-1:1})}
-function placeSteps(steps,startK,byK,extraIn){var extra={},out=[],prev=null;for(var k in extraIn)extra[k]=extraIn[k].slice();
-  var last=parseKey(byK);
-  for(var i=0;i<steps.length;i++){var st=steps[i],from=prev?parseKey(prev.date):parseKey(startK);
-    var sl=findSlot(st.dur,from,last,{},extra,prev);if(!sl)break;
-    (extra[sl.date]=extra[sl.date]||[]).push([sl.s,sl.e]);sl.step=st.name;out.push(sl);prev=sl}
-  return out}
-function parseStepLine(txt){return String(txt||'').split(/\s*(?:,|，|→|->|>|\n)\s*/).map(function(part){var q=parseTask(part);return {name:q.title,dur:q.dur||0}}).filter(function(x){return x.name})}
+/* 문장 해석: "환경계획 기말 공부, 3장~6장, 시험 12월 10일, 하루에 한 장씩, 저녁 7시 이후 1시간 반" */
+var KNUM={한:1,하나:1,두:2,둘:2,세:3,셋:3,네:4,넷:4,다섯:5};
+var UNITS=['장','단원','챕터','강','주차','차시','쪽','페이지','문제','회','과'];
+function numK(x){return KNUM[x]!=null?KNUM[x]:+x}
+function parsePlan(txt){var t=' '+String(txt||'').replace(/[,，]/g,' , ')+' ',o={},m,U=UNITS.join('|');
+  var cut=function(mm){t=t.replace(mm[0],' ')};
+  if((m=new RegExp('(?:ch\\.?\\s*)?(\\d+)\\s*('+U+')?\\s*[~\\-–]\\s*(?:ch\\.?\\s*)?(\\d+)\\s*('+U+')?','i').exec(t))){o.from=+m[1];o.to=+m[3];o.unit=/ch/i.test(m[0])?'ch':(m[4]||m[2]||'장');cut(m)}
+  if((m=new RegExp('하루에?\\s*(한|하나|두|둘|세|셋|네|넷|다섯|\\d+)\\s*('+U+'|개)?\\s*씩').exec(t))){o.perDay=numK(m[1]);if(m[2]&&m[2]!=='개'&&!o.unit)o.unit=m[2];cut(m)}
+  if((m=/(저녁|밤|오후|오전|아침)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?\s*(이후|부터|넘어서|후에?)/.exec(t))){var hh=+m[2],mi=m[3]?+m[3]:(m[4]?30:0);
+    if((m[1]==='저녁'||m[1]==='밤'||m[1]==='오후')&&hh<12)hh+=12;else if(!m[1]&&hh<=8)hh+=12;o.winFrom=hh*60+mi;cut(m)}
+  else if((m=/(^|\s)(오전|아침|오후|저녁|밤)에?(?=\s)/.exec(t))){o.winPreset={오전:'am',아침:'am',오후:'pm',저녁:'eve',밤:'eve'}[m[2]];cut(m)}
+  if((m=/(\d+(?:\.\d+)?)\s*시간\s*(반|(\d+)\s*분)?\s*씩?/.exec(t))){o.dur=Math.round(parseFloat(m[1])*60)+(m[2]==='반'?30:m[3]?+m[3]:0);cut(m)}
+  else if((m=/(\d+)\s*분\s*씩?/.exec(t))){o.dur=+m[1];cut(m)}
+  var now=new Date(),exam=/(시험|기말|중간|퀴즈|평가)/.test(t);
+  var mk=function(mo,d){var x=new Date(now.getFullYear(),mo-1,d);if(x<dayOnly(now))x.setFullYear(x.getFullYear()+1);return x};
+  if((m=/(시험|마감|제출|발표)?\s*(?:은|는|일|날)?\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*(까지)?/.exec(t))||(m=/(시험|마감|제출|발표)?\s*(\d{1,2})\/(\d{1,2})\s*(까지)?/.exec(t))){
+    var d=mk(+m[2],+m[3]);if(!m[4]&&(m[1]||exam)){d=addDays(d,-1);o.byNote=(m[1]||'시험')+' '+(+m[2])+'/'+(+m[3])+' 전날까지'}o.by=keyOf(d);cut(m)}
+  else if((m=/(오늘|내일|모레)\s*까지/.exec(t))){o.by=keyOf(addDays(now,{오늘:0,내일:1,모레:2}[m[1]]));cut(m)}
+  else if((m=/(다음\s*주\s*)?(월|화|수|목|금|토|일)(요일)?\s*까지/.exec(t))){var base=mondayOf(now);if(m[1])base=addDays(base,7);var dd=addDays(base,DS.indexOf(m[2]));if(dd<dayOnly(now))dd=addDays(dd,7);o.by=keyOf(dd);cut(m)}
+  o.title=t.replace(/\s*,\s*/g,' ').replace(/\s+/g,' ').replace(/(에|이후|씩)$/,'').trim();return o}
+/* 집중 시간대 · 하루 공부 상한: 빈 시간을 다 채우지 않고, 집중이 잘 되는 시간에 먼저 넣어 다른 일 할 시간을 남긴다 */
+var FOCUS={am:['오전','09:00','12:00'],pm:['오후','13:00','18:00'],eve:['저녁','19:00','22:00']};
+var STUDY={cats:{work:1},focus:lsGet('focusWins',['am','eve']),cap:lsGet('studyCap',240),spill:lsGet('focusSpill',true)};
+function dayMinutes(k,extra,catsOnly){var tot=0;Store.list().forEach(function(ev){if(ev.allDay||!ev.start)return;if(catsOnly&&!catsOnly[ev.cat])return;if(expand(ev,k,k).length){var sp=evSpan(ev);tot+=sp[1]-sp[0]}});
+  (extra&&extra[k]||[]).forEach(function(x){if(!catsOnly||x[2])tot+=x[1]-x[0]});return tot}
+function freeLeft(k,extra){var c=AUTO.cfg,F=toMin(c.from),T=toMin(c.to),iv=[];
+  Store.list().forEach(function(ev){if(ev.allDay||!ev.start)return;if(expand(ev,k,k).length)iv.push(evSpan(ev))});(extra[k]||[]).forEach(function(x){iv.push([x[0],x[1]])});
+  iv=iv.map(function(x){return [Math.max(F,x[0]),Math.min(T,x[1])]}).filter(function(x){return x[1]>x[0]}).sort(function(a,b){return a[0]-b[0]});
+  var used=0,cs=-1,ce=-1;iv.forEach(function(x){if(x[0]>ce){if(ce>cs)used+=ce-cs;cs=x[0];ce=x[1]}else ce=Math.max(ce,x[1])});if(ce>cs)used+=ce-cs;return Math.max(0,T-F-used)}
+/* 효율 배치: 세션마다 후보 날짜·시간을 점수로 비교해 가장 좋은 자리를 고른다
+   - 그날 공부가 적을수록 좋음(몰림 방지)          - 집중 시간대 안이면 좋음
+   - 기간의 앞 70%에 고르게 퍼진 '이상적인 날'에 가까울수록 좋음 (끝부분은 복습용 여유)
+   - 다른 공부와 붙어서 긴 연속 공부가 되면 감점     - 순서 유지, 하루 한 번 */
+function planSessions(ss,d,startK,byK,ws,extra0,isStudy,allowSpill){
+  var extra={};for(var k in extra0)extra[k]=extra0[k].slice();
+  var start=parseKey(startK),last=parseKey(byK),span=Math.max(0,diffDays(start,last)),n=ss.length,out=[],prevDay=null;
+  var allWin=[{from:toMin(AUTO.cfg.from),to:toMin(AUTO.cfg.to)}],g=+AUTO.cfg.gap||0;
+  function touchLen(k,s,e){var iv=[];Store.list().forEach(function(ev){if(ev.allDay||!ev.start||!STUDY.cats[ev.cat])return;if(expand(ev,k,k).length)iv.push(evSpan(ev))});
+    (extra[k]||[]).forEach(function(x){if(x[2])iv.push(x)});var a=s,b=e,ch=true;
+    while(ch){ch=false;iv.forEach(function(x){if(x[1]>=a-g-5&&x[1]<=a&&x[0]<a){a=x[0];ch=true}if(x[0]<=b+g+5&&x[0]>=b&&x[1]>b){b=x[1];ch=true}})}return b-a}
+  for(var i=0;i<n;i++){
+    var ideal=n>1?Math.round(i*span*0.7/(n-1)):0,best=null;
+    var from=prevDay?addDays(prevDay,1):start,lastI=addDays(last,-(n-1-i));
+    for(var day=new Date(from);day<=lastI;day=addDays(day,1)){var key=keyOf(day),load=isStudy?dayMinutes(key,extra,STUDY.cats):0;
+      if(isStudy&&load+d>STUDY.cap)continue;
+      var tries=[];ws.forEach(function(w){var sl=findSlot(d,day,day,{},extra,null,w);if(sl)tries.push({sl:sl,out:false})});
+      if(!tries.length&&allowSpill){var sl2=findSlot(d,day,day,{},extra,null,allWin[0]);if(sl2)tries.push({sl:sl2,out:true})}
+      tries.forEach(function(c){var dist=Math.abs(diffDays(start,day)-ideal),run=isStudy?touchLen(key,c.sl.s,c.sl.e):d;
+        var cost=(load+d)/60*1.6+(c.out?4:0)+dist*0.6+Math.max(0,run-120)/60*1.5;
+        if(!best||cost<best.cost)best={cost:cost,sl:c.sl,out:c.out}})}
+    if(!best)break;var sl=best.sl;sl.outside=best.out;sl.name=ss[i].name;
+    (extra[sl.date]=extra[sl.date]||[]).push([sl.s,sl.e,isStudy]);out.push(sl);prevDay=parseKey(sl.date)}
+  out.extra=extra;return out}
 function openPlace(prefill,cat){
-  var now=new Date(),tk=todayKey(),pc=parseTask(prefill||'');
-  var title=h('input',{type:'text','class':'in big',value:pc.title,placeholder:'예: 과제2 자료 조사 2시간 금요일까지','data-autofocus':true,'aria-label':'할 일',maxlength:'120'});
-  var durSel=h('select',{'class':'in','aria-label':'걸리는 시간'});[[30,'30분'],[45,'45분'],[60,'1시간'],[90,'1시간 30분'],[120,'2시간'],[180,'3시간'],[240,'4시간'],[300,'5시간'],[360,'6시간']].forEach(function(o){durSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
-  var nSel=h('select',{'class':'in','aria-label':'나눠서 하기'});[[1,'한 번에'],[2,'2번에 나눠서'],[3,'3번에 나눠서'],[4,'4번에 나눠서']].forEach(function(o){nSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
-  var startSel=h('select',{'class':'in','aria-label':'언제부터'});[['today','오늘부터'],['tomorrow','내일부터']].forEach(function(o){startSel.appendChild(h('option',{value:o[0],text:o[1]}))});
-  var by=h('input',{type:'date','class':'in',min:tk,'aria-label':'언제까지'});
-  var setDur=function(m){var best=null;Array.prototype.forEach.call(durSel.options,function(op){if(best==null||Math.abs(+op.value-m)<Math.abs(+best.value-m))best=op});
-    if(Math.abs(+best.value-m)>0){var op=h('option',{value:String(m),text:fmtDur(m)});durSel.appendChild(op);durSel.value=String(m)}else durSel.value=best.value};
-  setDur(pc.dur||60);nSel.value=String(pc.n||1);by.value=pc.by||keyOf(addDays(now,7));
+  var now=new Date(),tk=todayKey();
+  var title=h('input',{type:'text','class':'in big',placeholder:'예: 환경계획 기말 공부, 3장~6장, 시험 12월 10일, 하루에 한 장씩, 1시간 반','data-autofocus':true,'aria-label':'할 일',maxlength:'160'});
+  var hint=h('p',{'class':'note'});
+  var rFrom=h('input',{type:'number','class':'in',min:'0',placeholder:'3','aria-label':'범위 시작'}),rTo=h('input',{type:'number','class':'in',min:'0',placeholder:'6','aria-label':'범위 끝'});
+  var unit=h('input',{type:'text','class':'in',value:'장',list:'unit-dl','aria-label':'단위',maxlength:'6'}),udl=h('datalist',{id:'unit-dl'});UNITS.forEach(function(u){udl.appendChild(h('option',{value:u}))});
+  var perDay=h('select',{'class':'in','aria-label':'하루에 몇 개씩'});[1,2,3,4,5].forEach(function(n){perDay.appendChild(h('option',{value:String(n),text:n+'개씩'}))});
+  var dur=h('select',{'class':'in','aria-label':'한 번에 걸리는 시간'});[[30,'30분'],[45,'45분'],[60,'1시간'],[90,'1시간 30분'],[120,'2시간'],[150,'2시간 30분'],[180,'3시간']].forEach(function(o){dur.appendChild(h('option',{value:String(o[0]),text:o[1]}))});dur.value='90';
+  var setDur=function(mn){if(!Array.prototype.some.call(dur.options,function(op){return +op.value===mn}))dur.appendChild(h('option',{value:String(mn),text:fmtDur(mn)}));dur.value=String(mn)};
+  var nSel=h('select',{'class':'in','aria-label':'몇 번에 나눠서'});[[1,'한 번에'],[2,'2번'],[3,'3번'],[4,'4번']].forEach(function(o){nSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
+  // 공부할 시간: 집중 시간대(기본, 저장됨) 또는 이번만 직접 지정
+  var custom=null,focusBox=h('div',{'class':'cchips',role:'group','aria-label':'집중 시간대'}),customChip=h('span');
+  function drawFocus(){focusBox.textContent='';
+    Object.keys(FOCUS).forEach(function(k){var f=FOCUS[k];focusBox.appendChild(h('button',{type:'button','class':'cchip fchip','aria-pressed':String(!custom&&STUDY.focus.indexOf(k)>-1),disabled:!!custom,
+      text:f[0]+' '+f[1].slice(0,2).replace(/^0/,'')+'–'+f[2].slice(0,2).replace(/^0/,'')+'시',onclick:function(){var i=STUDY.focus.indexOf(k);if(i>-1){if(STUDY.focus.length>1)STUDY.focus.splice(i,1)}else STUDY.focus.push(k);
+        lsSet('focusWins',STUDY.focus);drawFocus();reset()}}))});
+    customChip.textContent='';if(custom)customChip.appendChild(h('span',{'class':'cchip fchip','aria-pressed':'true'},'이번만 '+hm(custom.from)+'~'+hm(custom.to),
+      h('button',{type:'button','class':'x','aria-label':'직접 지정한 시간대 지우기',text:'×',style:'width:22px;height:22px;font-size:15px',onclick:function(){custom=null;drawFocus();reset()}})))}
+  var capSel=h('select',{'class':'in','aria-label':'하루 공부 최대'});[[120,'2시간'],[180,'3시간'],[240,'4시간'],[300,'5시간'],[360,'6시간'],[480,'8시간'],[1440,'제한 없음']].forEach(function(o){capSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});capSel.value=String(STUDY.cap);
+  capSel.addEventListener('change',function(){STUDY.cap=+capSel.value;lsSet('studyCap',STUDY.cap);reset()});
+  var spill=h('input',{type:'checkbox',checked:STUDY.spill});spill.addEventListener('change',function(){STUDY.spill=spill.checked;lsSet('focusSpill',STUDY.spill);reset()});
+  var startD=h('input',{type:'date','class':'in',value:tk,min:tk,'aria-label':'언제부터'}),by=h('input',{type:'date','class':'in',value:keyOf(addDays(now,7)),min:tk,'aria-label':'끝낼 날짜'});
+  var byNote=h('span',{'class':'note'});
+  var review=h('input',{type:'checkbox',checked:false}),reviewF=h('label',{'class':'switch',style:'font-size:13.5px'},review,'마지막에 전체 복습 1회 추가 (끝낼 날짜 직전 2일 안)');reviewF.hidden=true;
+  review.addEventListener('change',function(){reset()});
   var kind=cat&&cat!=='school'&&cat!=='exam'?cat:'work',cats=h('div',{'class':'cchips',role:'radiogroup','aria-label':'종류'});
   CATS.forEach(function(c){if(c.k==='school'||c.k==='exam')return;var b=h('button',{type:'button','class':'cchip','data-c':c.k,role:'radio','aria-pressed':String(kind===c.k),'aria-checked':String(kind===c.k),text:c.n,onclick:function(){kind=c.k;
-    cats.querySelectorAll('.cchip').forEach(function(x){var on=x===b;x.setAttribute('aria-pressed',String(on));x.setAttribute('aria-checked',String(on))})}});cats.appendChild(b)});
-  var hint=h('p',{'class':'note'});
-  title.addEventListener('change',function(){var q=parseTask(title.value);if(q.dur)setDur(q.dur);if(q.n)nSel.value=String(q.n);if(q.by)by.value=q.by;
-    if(q.dur||q.n||q.by){title.value=q.title;hint.textContent='문장에서 '+[q.dur?'걸리는 시간':null,q.n?'나눠서 하기':null,q.by?'마감':null].filter(Boolean).join('·')+'을(를) 읽어 채웠어요.'}});
-  // 세부 단계 (단계별 시간, 순서대로 배치)
-  var stepsOn=false,stepRows=h('div',{'class':'st-rows'});
-  var durOpts=[[15,'15분'],[30,'30분'],[45,'45분'],[60,'1시간'],[90,'1시간 30분'],[120,'2시간'],[150,'2시간 30분'],[180,'3시간'],[240,'4시간']];
-  function stepRow(name,dur){var nm=h('input',{type:'text','class':'in',value:name||'',placeholder:'단계 (예: 자료 조사)','aria-label':'단계 이름'});
-    var ds=h('select',{'class':'in','aria-label':'단계 시간'});durOpts.forEach(function(o){ds.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
-    if(dur&&!durOpts.some(function(o){return o[0]===dur}))ds.appendChild(h('option',{value:String(dur),text:fmtDur(dur)}));ds.value=String(dur||60);
-    var row=h('div',{'class':'st-row'},h('span',{'class':'st-no'}),nm,ds,h('button',{type:'button','class':'x','aria-label':'단계 삭제',text:'×',onclick:function(){row.remove();renum();reset()}}));
-    nm.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.isComposing){e.preventDefault();var r=stepRow('',60);row.after(r);renum();r.querySelector('input').focus()}});
-    ds.addEventListener('change',reset);return row}
-  function renum(){var rs=stepRows.querySelectorAll('.st-row'),tot=0;rs.forEach(function(r,i){r.querySelector('.st-no').textContent=(i+1)+'.';tot+=+r.querySelector('select').value});
-    stepTot.textContent=rs.length?'총 '+fmtDur(tot)+' · '+rs.length+'단계':''}
-  function getSteps(){return Array.prototype.map.call(stepRows.querySelectorAll('.st-row'),function(r){return {name:r.querySelector('input').value.trim(),dur:+r.querySelector('select').value}}).filter(function(x){return x.name})}
-  var stepTot=h('span',{'class':'note'});
-  var stepQuick=h('input',{type:'text','class':'in',placeholder:'한 줄로: 자료 조사 1시간, 초안 2시간, 검토 30분','aria-label':'단계 한 줄 입력'});
-  stepQuick.addEventListener('keydown',function(e){if(e.key!=='Enter'||e.isComposing)return;e.preventDefault();var ps=parseStepLine(stepQuick.value);if(!ps.length)return;
-    stepRows.textContent='';ps.forEach(function(x){stepRows.appendChild(stepRow(x.name,x.dur||60))});stepQuick.value='';renum();reset()});
-  var stepBox=h('div',{'class':'box st-box',hidden:true},h('div',{style:'display:flex;justify-content:space-between;align-items:baseline'},h('span',{'class':'fl',text:'세부 단계 (순서대로 배치)'}),stepTot),
-    stepRows,h('button',{type:'button','class':'btn sm',text:'+ 단계 추가',style:'align-self:flex-start',onclick:function(){var r=stepRow('',60);stepRows.appendChild(r);renum();r.querySelector('input').focus()}}),stepQuick);
-  var simpleRow;
-  var stepToggle=h('button',{type:'button','class':'morebtn','aria-expanded':'false',onclick:function(){setSteps(!stepsOn)}});
-  function setSteps(on){stepsOn=on;stepBox.hidden=!on;if(simpleRow)simpleRow.hidden=on;stepToggle.setAttribute('aria-expanded',String(on));
-    stepToggle.textContent=on?'세부 단계 없이 한 번에 하기':'+ 세부 단계로 나누기 (단계별 시간)';
-    if(on&&!stepRows.childNodes.length){stepRows.appendChild(stepRow('',60));stepRows.appendChild(stepRow('',60));renum()}reset()}
-  function reset(){avoid={};if(slots.length||preview.childNodes.length)find()}
+    cats.querySelectorAll('.cchip').forEach(function(x){var on=x===b;x.setAttribute('aria-pressed',String(on));x.setAttribute('aria-checked',String(on))});reset()}});cats.appendChild(b)});
+  var rangeRow=h('div',{'class':'f'},h('span',{'class':'fl',text:'범위 (선택) — 비워 두면 한 덩어리로'}),h('div',{'class':'rg-row'},rFrom,h('span',{text:'~'}),rTo,unit,udl));
+  var perDayF=h('div',{'class':'f'},h('span',{'class':'fl',text:'하루에'}),perDay),nF=h('div',{'class':'f'},h('span',{'class':'fl',text:'나눠서 (하루 한 번)'}),nSel);
+  function hasRange(){return rFrom.value!==''&&rTo.value!==''}
+  function syncMode(){var r=hasRange();perDayF.hidden=!r;nF.hidden=r;reviewF.hidden=!r}
+  [rFrom,rTo].forEach(function(x){x.addEventListener('input',syncMode)});
+  function applyParse(){var q=parsePlan(title.value),got=[];
+    if(q.from!=null){rFrom.value=q.from;rTo.value=q.to;unit.value=q.unit;got.push('범위')}
+    if(q.perDay){perDay.value=String(Math.min(5,q.perDay));got.push('하루 분량')}
+    if(q.dur){setDur(q.dur);got.push('한 번 시간')}
+    if(q.winFrom!=null){custom={from:q.winFrom,to:Math.max(q.winFrom+60,toMin(AUTO.cfg.to)>q.winFrom+60?toMin(AUTO.cfg.to):Math.min(1439,q.winFrom+180))};got.push('시간대')}
+    else if(q.winPreset){var f=FOCUS[{am:'am',pm:'pm',eve:'eve'}[q.winPreset]];custom={from:toMin(f[1]),to:toMin(f[2])};got.push('시간대')}
+    if(q.by){by.value=q.by;byNote.textContent=q.byNote||'';review.checked=!!q.byNote;got.push('마감')}
+    if(got.length){title.value=q.title;hint.textContent='문장에서 '+got.join('·')+'을(를) 읽어 채웠어요. 아래에서 고칠 수 있어요.';drawFocus()}
+    syncMode()}
+  title.addEventListener('change',applyParse);
   var preview=h('div',{'class':'pl-prev'}),err=h('p',{'class':'errmsg',role:'alert'}),avoid={},slots=[];
-  function find(){err.textContent='';var t=title.value.trim();if(!t){err.textContent='할 일을 적어 주세요.';title.focus();return false}
-    var q=parseTask(t);if(q.dur||q.n||q.by){title.value=q.title;if(q.dur)setDur(q.dur);if(q.n)nSel.value=String(q.n);if(q.by)by.value=q.by;
-      hint.textContent='문장에서 '+[q.dur?'걸리는 시간':null,q.n?'나눠서 하기':null,q.by?'마감':null].filter(Boolean).join('·')+'을(를) 읽어 채웠어요.'}
-    t=title.value.trim();if(!t){err.textContent='할 일 이름을 적어 주세요.';title.focus();return false}
-    if(!parseKey(by.value)||by.value<tk){err.textContent='마감 날짜를 확인해 주세요.';return false}
-    var startK=startSel.value==='tomorrow'?keyOf(addDays(now,1)):tk;if(by.value<startK){err.textContent='마감이 시작보다 빨라요.';return false}
-    if(stepsOn){var steps=getSteps();if(!steps.length){err.textContent='단계 이름을 하나 이상 적어 주세요.';return false}
-      slots=placeSteps(steps,startK,by.value,avoid);slots.forEach(function(sl){sl.name=t+' - '+sl.step});slots.want=steps.length}
-    else{var n=+nSel.value;slots=placeSessions(+durSel.value,n,startK,by.value,avoid);slots.forEach(function(sl,i){sl.name=n>1?t+' ('+(i+1)+'/'+n+')':t});slots.want=n}
-    drawPrev();return true}
+  function sessions(){var t=title.value.trim(),out=[];
+    if(hasRange()){var a=+rFrom.value,b=+rTo.value,u=unit.value.trim()||'장',k=+perDay.value;if(b<a){var x=a;a=b;b=x}
+      var lab=function(x){return /^[a-z]+$/i.test(u)?u+x:x+u};
+      for(var i=a;i<=b;i+=k){var e=Math.min(b,i+k-1);out.push({name:t+' '+(e>i?lab(i)+'~'+lab(e):lab(i))})}}
+    else{var n=+nSel.value;for(var j=0;j<n;j++)out.push({name:n>1?t+' ('+(j+1)+'/'+n+')':t})}
+    return out}
+  function wins(){if(custom)return [custom];return STUDY.focus.map(function(k){return {from:toMin(FOCUS[k][1]),to:toMin(FOCUS[k][2])}}).sort(function(a,b){return a.from-b.from})}
+  function slotOnDay(d,dd,extra,ws,studyCount){var k=keyOf(d);
+    if(studyCount&&dayMinutes(k,extra,STUDY.cats)+dd>STUDY.cap)return null;
+    for(var w=0;w<ws.length;w++){var sl=findSlot(dd,d,d,{},extra,null,ws[w]);if(sl)return sl}return null}
+  function find(){err.textContent='';applyParse();var t=title.value.trim();if(!t){err.textContent='할 일을 적어 주세요.';title.focus();return false}
+    var d=+dur.value,ws=wins();if(!ws.some(function(w){return w.to-w.from>=d})){err.textContent='고른 시간대가 한 번 걸리는 시간('+fmtDur(d)+')보다 짧아요.';return false}
+    if(!parseKey(startD.value)||!parseKey(by.value)||by.value<startD.value){err.textContent='날짜를 확인해 주세요. 끝낼 날짜가 시작보다 빨라요.';return false}
+    var ss=sessions();if(ss.length>60){err.textContent='범위가 너무 커요. 하루 분량을 늘려 주세요.';return false}
+    var isStudy=!!STUDY.cats[kind];
+    slots=planSessions(ss,d,startD.value,by.value,ws,avoid,isStudy,STUDY.spill&&!custom);var want=ss.length;
+    if(review.checked&&!review.parentNode.hidden&&slots.length===ss.length){var lastDay=parseKey(by.value),rs=planSessions([{name:title.value.trim()+' 전체 복습'}],Math.max(60,d),keyOf(addDays(lastDay,-1)<parseKey(slots[slots.length-1].date)?addDays(parseKey(slots[slots.length-1].date),1):addDays(lastDay,-1)),by.value,ws,slots.extra,isStudy,true);
+      if(rs.length){rs[0].review=true;slots.push(rs[0]);slots.extra=rs.extra;want++}else slots.noReview=true}
+    slots.want=want;drawPrev();return true}
   function drawPrev(){preview.textContent='';var n=slots.want||1;
-    if(!slots.length){preview.appendChild(h('div',{'class':'pl-empty',text:fmtDate(by.value)+'까지 '+AUTO.cfg.from+'~'+AUTO.cfg.to+' 사이에 들어갈 빈 시간이 없어요. 마감을 늦추거나, '+(stepsOn?'단계 시간을 줄여 보세요.':'나눠서 하기를 늘려 보세요.')}));upd();return}
+    if(!slots.length){preview.appendChild(h('div',{'class':'pl-empty',text:fmtDate(by.value)+'까지 고른 시간대에 넣을 자리가 없어요. 시간대를 더 고르거나, 하루 공부 최대를 늘리거나, 끝낼 날짜를 늦춰 보세요.'}));upd();return}
+    var mx=0,outN=0;slots.forEach(function(sl){mx=Math.max(mx,dayMinutes(sl.date,slots.extra,STUDY.cats));if(sl.outside)outN++});
+    var lastSl=slots[slots.length-1],spare=diffDays(parseKey(lastSl.date),parseKey(by.value));
     preview.appendChild(h('div',{'class':'fl',text:'이렇게 넣을게요'}));
-    slots.forEach(function(sl,i){preview.appendChild(h('div',{'class':'pl-row'},h('b',{text:fmtDate(sl.date)}),h('span',{text:hm(sl.s)+' – '+hm(sl.e)}),h('span',{'class':'pl-t',text:sl.name})))});
-    if(slots.length<n)preview.appendChild(h('div',{'class':'pl-empty',text:stepsOn?'마감 전 빈 시간이 부족해서 '+n+'단계 중 '+slots.length+'단계까지만 넣을 수 있어요. 마감을 늦추거나 단계 시간을 줄여 보세요.':'마감 전 빈 시간이 부족해서 '+n+'번 중 '+slots.length+'번만 넣을 수 있어요.'}));
+    preview.appendChild(h('div',{'class':'pl-sum',text:slots.length+'번을 '+fmtDate(slots[0].date).replace(/ \(.+\)/,'')+'~'+fmtDate(lastSl.date).replace(/ \(.+\)/,'')+'에 고르게 · 하루 공부 최대 '+fmtDur(mx)+' · '+(outN?'집중 시간대 밖 '+outN+'번':'모두 집중 시간대')+(spare>0?' · 끝낼 날짜까지 '+spare+'일 여유':'')}));
+    slots.forEach(function(sl){var st=dayMinutes(sl.date,slots.extra,STUDY.cats),fr=freeLeft(sl.date,slots.extra);
+      preview.appendChild(h('div',{'class':'pl-row'},h('b',{text:fmtDate(sl.date)}),h('span',{text:hm(sl.s)+' – '+hm(sl.e)}),h('span',{'class':'pl-t',text:(sl.review?'★ ':'')+sl.name}),
+        h('small',{'class':'pl-day'+(sl.outside?' warn':''),text:(sl.outside?'집중 시간대 밖 · ':'')+'그날 공부 '+fmtDur(st)+' · 남는 자유 시간 '+fmtDur(fr)})))});
+    if(slots.length<n)preview.appendChild(h('div',{'class':'pl-empty',text:'끝낼 날짜까지 '+n+'번 중 '+slots.length+'번만 들어가요. 하루 분량을 늘리거나 하루 공부 최대를 늘려 보세요.'}));
+    if(slots.noReview)preview.appendChild(h('div',{'class':'pl-empty',text:'끝낼 날짜 직전에 자리가 없어 전체 복습은 넣지 않았어요.'}));
     preview.appendChild(h('button',{type:'button','class':'btn sm',text:'다른 시간 찾기',onclick:function(){slots.forEach(function(sl){(avoid[sl.date]=avoid[sl.date]||[]).push([sl.s,sl.e])});find()}}));
     upd()}
-  var go=h('button',{type:'button','class':'btn primary'}),findBtn=h('button',{type:'button','class':'btn',text:'빈 시간 찾기',onclick:function(){avoid={};find()}});
+  function reset(){avoid={};if(slots.length||preview.childNodes.length)find()}
+  [rFrom,rTo,unit,perDay,dur,nSel,startD,by].forEach(function(x){x.addEventListener('change',reset)});
+  var go=h('button',{type:'button','class':'btn primary'}),findBtn=h('button',{type:'button','class':'btn',text:'시간 찾기',onclick:function(){avoid={};find()}});
   function upd(){go.disabled=!slots.length;go.textContent=slots.length?slots.length+'개 일정으로 추가':'추가'}
-  [durSel,nSel,startSel,by].forEach(function(x){x.addEventListener('change',function(){avoid={};if(slots.length||preview.childNodes.length)find()})});
   title.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.isComposing){e.preventDefault();avoid={};find()}});
   go.addEventListener('click',function(){if(!slots.length)return;var ids=[];
-    slots.forEach(function(sl,i){var ev=normEvent({id:uid(),title:sl.name,date:sl.date,start:hm(sl.s),end:hm(sl.e),cat:kind,remind:10,note:'자동 배치 · 마감 '+fmtDate(by.value)});ids.push(ev.id);Store.put(ev)});
+    slots.forEach(function(sl){var ev=normEvent({id:uid(),title:sl.name,date:sl.date,start:hm(sl.s),end:hm(sl.e),cat:kind,remind:10,note:'자동 배치 · '+fmtDate(by.value)+'까지'});ids.push(ev.id);Store.put(ev)});
     m.close();toast(ids.length+'개 일정으로 넣었어요 · 첫 일정 '+fmtDate(slots[0].date)+' '+hm(slots[0].s),'되돌리기',function(){ids.forEach(function(id){Store.del(id)});toast('추가를 취소했어요')},15000)});
-  upd();
-  simpleRow=h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'걸리는 시간'}),durSel),h('div',{'class':'f'},h('span',{'class':'fl',text:'나눠서 하기'}),nSel));
-  setSteps(false);
-  var body=h('div',{style:'display:flex;flex-direction:column;gap:14px'},title,hint,
-    simpleRow,stepToggle,stepBox,
-    h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'언제부터'}),startSel),h('div',{'class':'f'},h('span',{'class':'fl',text:'언제까지'}),by)),
+  upd();drawFocus();syncMode();
+  var body=h('div',{style:'display:flex;flex-direction:column;gap:14px'},title,hint,rangeRow,
+    h('div',{'class':'row'},perDayF,nF,h('div',{'class':'f'},h('span',{'class':'fl',text:'한 번에'}),dur)),
+    h('div',{'class':'row',style:'align-items:start'},h('div',{'class':'f'},h('span',{'class':'fl',text:'언제부터'}),startD),h('div',{'class':'f'},h('span',{'class':'fl',text:'끝낼 날짜'}),by,byNote)),
+    reviewF,
     h('div',{'class':'f'},h('span',{'class':'fl',text:'종류'}),cats),
-    h('p',{'class':'note',text:'수업·시험 등 이미 있는 일정을 피해서, '+AUTO.cfg.from+'~'+AUTO.cfg.to+' 사이 빈 시간에 '+(AUTO.cfg.gap?AUTO.cfg.gap+'분씩 띄워 ':'')+'넣어요. 기준은 ‘일정 자동 조정’에서 바꿀 수 있어요.'}),
+    h('div',{'class':'box'},
+      h('div',{'class':'f'},h('span',{'class':'fl',text:'집중이 잘 되는 시간 (여기에 먼저 넣어요)'}),h('div',{'class':'win-row'},focusBox,customChip)),
+      h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'하루 공부 최대'}),capSel),
+        h('label',{'class':'switch',style:'font-size:13.5px'},spill,'자리가 없으면 다른 빈 시간도 쓰기')),
+      h('p',{'class':'note',text:'하루 공부(업무 종류) 합계가 최대를 넘지 않게 넣어서, 나머지 시간은 다른 일에 쓸 수 있게 남겨 둬요. 이 설정은 기억돼요.'})),
     preview,err);
   var m=modal({title:'할 일 자동 배치',body:body,foot:[h('span',{'class':'sp'}),h('button',{type:'button','class':'btn',text:'취소',onclick:function(){m.close()}}),findBtn,go]});
-  if(pc.title&&(pc.dur||pc.by))find()}
+  if(prefill){title.value=prefill;applyParse();if(/\d/.test(prefill))find()}}
 
 /* ================= toasts ================= */
 function toast(msg,act,fn,ms){var t=h('div',{'class':'toast'},h('span',{text:msg}));
