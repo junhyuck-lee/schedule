@@ -304,6 +304,15 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 
 .pager .wk-lbl{font-variant-numeric:tabular-nums;font-size:13px;color:var(--text)}
 
+/* task placement */
+.side>*{flex-shrink:0}
+.pl-prev{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.pl-prev:empty{display:none}
+.pl-row{display:grid;grid-template-columns:110px 110px 1fr;gap:8px;width:100%;padding:9px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line);font-size:14px;font-variant-numeric:tabular-nums}
+.pl-row .pl-t{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pl-empty{font-size:13px;color:var(--warn)}
+@media (max-width:860px){.pl-row{grid-template-columns:1fr 1fr}.pl-row .pl-t{grid-column:1/-1}}
+
 /* toasts */
 .toasts{position:fixed;right:20px;bottom:20px;z-index:50;display:flex;flex-direction:column;gap:8px;align-items:flex-end;max-width:calc(100% - 40px)}
 .toast{background:var(--ink);color:var(--on-ink);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;font-size:13.5px;
@@ -356,7 +365,8 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 <div class="app">
   <aside class="side" id="side" aria-label="메뉴">
     <div class="brand"><i aria-hidden="true">일</i>일정 관리</div>
-    <button class="btn primary block" id="addBtn" type="button">+ 새 일정</button>
+    <div style="display:flex;flex-direction:column;gap:8px"><button class="btn primary block" id="addBtn" type="button">+ 새 일정</button>
+    <button class="btn block" id="placeBtn" type="button">할 일 자동 배치</button></div>
     <nav class="nav" id="nav" aria-label="보기"></nav>
     <div class="mini" id="mini"></div>
     <div><div class="sect-h"><span>카테고리</span><span id="catHint">이번 달</span></div><div class="cats" id="cats"></div></div>
@@ -1032,6 +1042,7 @@ function openEditor(ev,dateK,preset){
     if(e.remind>-1&&isNew)maybeAskNotif()}
   title.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&!ev.isComposing){ev.preventDefault();save()}});
   var foot=[];
+  if(isNew)foot.push(h('button',{type:'button','class':'btn ghost',text:'시간 자동으로 정하기',title:'빈 시간을 찾아 자동으로 배치해요',onclick:function(){var tt=title.value;m.close();openPlace(tt,e.cat)}}));
   if(!isNew)foot.push(h('button',{type:'button','class':'btn danger',text:'삭제',onclick:function(){askDelete(Store.get(e.id),occDate,m)}}));
   if(!isNew)foot.push(h('button',{type:'button','class':'btn',text:'복제',onclick:function(){var c=normEvent(Object.assign(clone(Store.get(e.id)),{id:uid(),done:[],ex:[],created:Date.now()}));
     c.title=c.title+' (복사)';Store.put(c);m.close();openEditor(c,c.date)}}));
@@ -1140,6 +1151,71 @@ function openAuto(){
       h('div',{'class':'f'},h('span',{'class':'fl',text:'일정 사이 쉬는 시간'}),gap))));
   var m=modal({title:'일정 자동 조정',body:body,foot:[h('span',{'class':'sp'}),h('button',{type:'button','class':'btn',text:'취소',onclick:function(){m.close()}}),go],onClose:function(){refresh()}});
   draw()}
+
+/* ================= 할 일 자동 배치 =================
+   할 일과 걸리는 시간·마감을 받아 빈 시간을 찾아 미리 보여 주고, 확인하면 일정으로 추가한다.
+   빈 시간 기준(공부 가능 시간·쉬는 시간)은 '일정 자동 조정' 설정과 같다. */
+function parseTask(txt){var o={title:txt},t=' '+txt+' ',m;
+  if((m=/(^|\s)(\d+(?:\.\d+)?)\s*시간(?:\s*(\d+)\s*분)?(?=\s)/.exec(t))){o.dur=Math.round(parseFloat(m[2])*60)+(m[3]?+m[3]:0);t=t.replace(m[0],' ')}
+  else if((m=/(^|\s)(\d+)\s*분(?=\s)/.exec(t))){o.dur=+m[2];t=t.replace(m[0],' ')}
+  if((m=/(^|\s)(\d+)\s*번\s*나눠서?(?=\s)|(^|\s)(\d+)\s*회(?=\s)/.exec(t))){o.n=+(m[2]||m[4]);t=t.replace(m[0],' ')}
+  var now=new Date();
+  if((m=/(^|\s)(오늘|내일|모레)\s*까지(?=\s)/.exec(t))){o.by=keyOf(addDays(now,{오늘:0,내일:1,모레:2}[m[2]]));t=t.replace(m[0],' ')}
+  else if((m=/(^|\s)(\d{1,2})\/(\d{1,2})\s*까지(?=\s)/.exec(t))){var d=new Date(now.getFullYear(),+m[2]-1,+m[3]);if(d<dayOnly(now))d.setFullYear(d.getFullYear()+1);o.by=keyOf(d);t=t.replace(m[0],' ')}
+  else if((m=/(^|\s)(다음\s*주\s*)?(월|화|수|목|금|토|일)(요일)?\s*까지(?=\s)/.exec(t))){var w=DS.indexOf(m[3]),base=mondayOf(now);if(m[2])base=addDays(base,7);var dd=addDays(base,w);if(dd<dayOnly(now))dd=addDays(dd,7);o.by=keyOf(dd);t=t.replace(m[0],' ')}
+  o.title=t.replace(/\s+/g,' ').trim();return o}
+function placeSessions(dur,n,startK,byK,extraIn){var extra={},out=[];for(var k in extraIn)extra[k]=extraIn[k].slice();
+  var from=parseKey(startK),last=parseKey(byK),per=Math.max(15,Math.round(dur/n/5)*5);
+  for(var i=0;i<n;i++){var sl=findSlot(per,from,last,{},extra);
+    if(!sl&&i>0)sl=findSlot(per,parseKey(startK),last,{},extra); // 다른 날이 없으면 같은 날이라도
+    if(!sl)break;(extra[sl.date]=extra[sl.date]||[]).push([sl.s,sl.e]);out.push(sl);from=addDays(parseKey(sl.date),1);if(from>last)from=last}
+  return out.sort(function(a,b){return (a.date+pad(a.s))<(b.date+pad(b.s))?-1:1})}
+function openPlace(prefill,cat){
+  var now=new Date(),tk=todayKey(),pc=parseTask(prefill||'');
+  var title=h('input',{type:'text','class':'in big',value:pc.title,placeholder:'예: 과제2 자료 조사 2시간 금요일까지','data-autofocus':true,'aria-label':'할 일',maxlength:'120'});
+  var durSel=h('select',{'class':'in','aria-label':'걸리는 시간'});[[30,'30분'],[45,'45분'],[60,'1시간'],[90,'1시간 30분'],[120,'2시간'],[180,'3시간'],[240,'4시간'],[300,'5시간'],[360,'6시간']].forEach(function(o){durSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
+  var nSel=h('select',{'class':'in','aria-label':'나눠서 하기'});[[1,'한 번에'],[2,'2번에 나눠서'],[3,'3번에 나눠서'],[4,'4번에 나눠서']].forEach(function(o){nSel.appendChild(h('option',{value:String(o[0]),text:o[1]}))});
+  var startSel=h('select',{'class':'in','aria-label':'언제부터'});[['today','오늘부터'],['tomorrow','내일부터']].forEach(function(o){startSel.appendChild(h('option',{value:o[0],text:o[1]}))});
+  var by=h('input',{type:'date','class':'in',min:tk,'aria-label':'언제까지'});
+  var setDur=function(m){var best=null;Array.prototype.forEach.call(durSel.options,function(op){if(best==null||Math.abs(+op.value-m)<Math.abs(+best.value-m))best=op});
+    if(Math.abs(+best.value-m)>0){var op=h('option',{value:String(m),text:fmtDur(m)});durSel.appendChild(op);durSel.value=String(m)}else durSel.value=best.value};
+  setDur(pc.dur||60);nSel.value=String(pc.n||1);by.value=pc.by||keyOf(addDays(now,7));
+  var kind=cat&&cat!=='school'&&cat!=='exam'?cat:'work',cats=h('div',{'class':'cchips',role:'radiogroup','aria-label':'종류'});
+  CATS.forEach(function(c){if(c.k==='school'||c.k==='exam')return;var b=h('button',{type:'button','class':'cchip','data-c':c.k,role:'radio','aria-pressed':String(kind===c.k),'aria-checked':String(kind===c.k),text:c.n,onclick:function(){kind=c.k;
+    cats.querySelectorAll('.cchip').forEach(function(x){var on=x===b;x.setAttribute('aria-pressed',String(on));x.setAttribute('aria-checked',String(on))})}});cats.appendChild(b)});
+  var hint=h('p',{'class':'note'});
+  title.addEventListener('change',function(){var q=parseTask(title.value);if(q.dur)setDur(q.dur);if(q.n)nSel.value=String(q.n);if(q.by)by.value=q.by;
+    if(q.dur||q.n||q.by){title.value=q.title;hint.textContent='문장에서 '+[q.dur?'걸리는 시간':null,q.n?'나눠서 하기':null,q.by?'마감':null].filter(Boolean).join('·')+'을(를) 읽어 채웠어요.'}});
+  var preview=h('div',{'class':'pl-prev'}),err=h('p',{'class':'errmsg',role:'alert'}),avoid={},slots=[];
+  function find(){err.textContent='';var t=title.value.trim();if(!t){err.textContent='할 일을 적어 주세요.';title.focus();return false}
+    var q=parseTask(t);if(q.dur||q.n||q.by){title.value=q.title;if(q.dur)setDur(q.dur);if(q.n)nSel.value=String(q.n);if(q.by)by.value=q.by;
+      hint.textContent='문장에서 '+[q.dur?'걸리는 시간':null,q.n?'나눠서 하기':null,q.by?'마감':null].filter(Boolean).join('·')+'을(를) 읽어 채웠어요.'}
+    if(!parseKey(by.value)||by.value<tk){err.textContent='마감 날짜를 확인해 주세요.';return false}
+    var startK=startSel.value==='tomorrow'?keyOf(addDays(now,1)):tk;if(by.value<startK){err.textContent='마감이 시작보다 빨라요.';return false}
+    slots=placeSessions(+durSel.value,+nSel.value,startK,by.value,avoid);drawPrev();return true}
+  function drawPrev(){preview.textContent='';var n=+nSel.value,t=title.value.trim();
+    if(!slots.length){preview.appendChild(h('div',{'class':'pl-empty',text:fmtDate(by.value)+'까지 '+AUTO.cfg.from+'~'+AUTO.cfg.to+' 사이에 들어갈 빈 시간이 없어요. 마감을 늦추거나, 나눠서 하기를 늘려 보세요.'}));upd();return}
+    preview.appendChild(h('div',{'class':'fl',text:'이렇게 넣을게요'}));
+    slots.forEach(function(sl,i){preview.appendChild(h('div',{'class':'pl-row'},h('b',{text:fmtDate(sl.date)}),h('span',{text:hm(sl.s)+' – '+hm(sl.e)}),h('span',{'class':'pl-t',text:n>1?t+' ('+(i+1)+'/'+n+')':t})))});
+    if(slots.length<n)preview.appendChild(h('div',{'class':'pl-empty',text:'마감 전 빈 시간이 부족해서 '+n+'번 중 '+slots.length+'번만 넣을 수 있어요.'}));
+    preview.appendChild(h('button',{type:'button','class':'btn sm',text:'다른 시간 찾기',onclick:function(){slots.forEach(function(sl){(avoid[sl.date]=avoid[sl.date]||[]).push([sl.s,sl.e])});find()}}));
+    upd()}
+  var go=h('button',{type:'button','class':'btn primary'}),findBtn=h('button',{type:'button','class':'btn',text:'빈 시간 찾기',onclick:function(){avoid={};find()}});
+  function upd(){go.disabled=!slots.length;go.textContent=slots.length?slots.length+'개 일정으로 추가':'추가'}
+  [durSel,nSel,startSel,by].forEach(function(x){x.addEventListener('change',function(){avoid={};if(slots.length||preview.childNodes.length)find()})});
+  title.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.isComposing){e.preventDefault();avoid={};find()}});
+  go.addEventListener('click',function(){if(!slots.length)return;var n=+nSel.value,t=title.value.trim(),ids=[];
+    slots.forEach(function(sl,i){var ev=normEvent({id:uid(),title:n>1?t+' ('+(i+1)+'/'+n+')':t,date:sl.date,start:hm(sl.s),end:hm(sl.e),cat:kind,remind:10,note:'자동 배치 · 마감 '+fmtDate(by.value)});ids.push(ev.id);Store.put(ev)});
+    m.close();toast(ids.length+'개 일정으로 넣었어요 · 첫 일정 '+fmtDate(slots[0].date)+' '+hm(slots[0].s),'되돌리기',function(){ids.forEach(function(id){Store.del(id)});toast('추가를 취소했어요')},15000)});
+  upd();
+  var body=h('div',{style:'display:flex;flex-direction:column;gap:14px'},title,hint,
+    h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'걸리는 시간'}),durSel),h('div',{'class':'f'},h('span',{'class':'fl',text:'나눠서 하기'}),nSel)),
+    h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'언제부터'}),startSel),h('div',{'class':'f'},h('span',{'class':'fl',text:'언제까지'}),by)),
+    h('div',{'class':'f'},h('span',{'class':'fl',text:'종류'}),cats),
+    h('p',{'class':'note',text:'수업·시험 등 이미 있는 일정을 피해서, '+AUTO.cfg.from+'~'+AUTO.cfg.to+' 사이 빈 시간에 '+(AUTO.cfg.gap?AUTO.cfg.gap+'분씩 띄워 ':'')+'넣어요. 기준은 ‘일정 자동 조정’에서 바꿀 수 있어요.'}),
+    preview,err);
+  var m=modal({title:'할 일 자동 배치',body:body,foot:[h('span',{'class':'sp'}),h('button',{type:'button','class':'btn',text:'취소',onclick:function(){m.close()}}),findBtn,go]});
+  if(pc.title&&(pc.dur||pc.by))find()}
 
 /* ================= toasts ================= */
 function toast(msg,act,fn,ms){var t=h('div',{'class':'toast'},h('span',{text:msg}));
@@ -1260,6 +1336,7 @@ $('prev').innerHTML=svgIco(ICON.left);$('next').innerHTML=svgIco(ICON.right);
 function move(dir){var c=S.cursor;S.cursor=S.view==='month'?new Date(c.getFullYear(),c.getMonth()+dir,1):addDays(c,7*dir);viewWeek.scrolled=false;render()}
 $('prev').addEventListener('click',function(){move(-1)});$('next').addEventListener('click',function(){move(1)});
 $('todayBtn').addEventListener('click',function(){S.cursor=dayOnly(new Date());viewWeek.scrolled=false;render()});
+$('placeBtn').addEventListener('click',function(){$('side').classList.remove('open');openPlace('')});
 $('addBtn').addEventListener('click',function(){$('side').classList.remove('open');openEditor(null,S.view==='dash'||S.view==='stats'||S.view==='list'?todayKey():keyOf(S.cursor))});
 $('fab').addEventListener('click',function(){openEditor(null,S.view==='month'||S.view==='week'?keyOf(S.cursor):todayKey())});
 $('menuBtn').addEventListener('click',function(){$('side').classList.toggle('open')});
