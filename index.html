@@ -477,11 +477,12 @@ function normEvent(r){if(!r||typeof r!=='object'||typeof r.id!=='string'||typeof
   var f=['daily','weekly','monthly','yearly'].indexOf(rep.f)>-1?rep.f:'none';
   var kd=function(v){return parseKey(v)?v:''};
   var arr=function(a){return Array.isArray(a)?a.filter(function(x){return parseKey(x)}):[]};
-  return {id:r.id,title:r.title,date:kd(r.date)||todayKey(),allDay:!!r.allDay,start:toMin(r.start)!=null?r.start:'',end:toMin(r.end)!=null?r.end:'',
+  var o={id:r.id,title:r.title,date:kd(r.date)||todayKey(),allDay:!!r.allDay,start:toMin(r.start)!=null?r.start:'',end:toMin(r.end)!=null?r.end:'',
     cat:CATS.some(function(c){return c.k===r.cat})?r.cat:'etc',place:typeof r.place==='string'?r.place:'',note:typeof r.note==='string'?r.note:'',
     rep:{f:f,n:Math.max(1,Math.min(99,parseInt(rep.n,10)||1)),wd:Array.isArray(rep.wd)?rep.wd.filter(function(x){return x>=0&&x<=6}):[],until:kd(rep.until)},
     remind:REMIND.some(function(x){return x[0]===r.remind})?r.remind:-1,dday:!!r.dday,done:arr(r.done),ex:arr(r.ex),
-    created:+r.created||Date.now(),updated:+r.updated||Date.now(),plan:normPlan(r.plan),reached:typeof r.reached==='number'&&isFinite(r.reached)?r.reached:null}}
+    created:+r.created||Date.now(),updated:+r.updated||Date.now()};
+  var pl=normPlan(r.plan);if(pl)o.plan=pl;if(typeof r.reached==='number'&&isFinite(r.reached))o.reached=r.reached;return o}
 function normPlan(p){if(!p||typeof p!=='object'||typeof p.id!=='string'||typeof p.name!=='string')return null;var f=+p.from,t=+p.to;if(!isFinite(f)||!isFinite(t)||t<f)return null;
   return {id:p.id,name:p.name,from:f,to:t,unit:typeof p.unit==='string'?p.unit.slice(0,6):'장',by:parseKey(p.by)?p.by:'',pace:+p.pace>0?+p.pace:1,dur:+p.dur>0?+p.dur:90}}
 
@@ -728,7 +729,7 @@ function renderCats(){var box=$('cats');box.textContent='';var c=S.cursor;
 function chkBtn(o){return h('button',{type:'button','class':'chk',role:'checkbox','aria-checked':String(o.done),'aria-label':o.ev.title+' 완료 표시',
   innerHTML:'<svg viewBox="0 0 24 24"><path d="'+ICON.check+'"/></svg>',onclick:function(e){e.stopPropagation();toggleDone(o)}})}
 function toggleDone(o){var cur=Store.get(o.ev.id);if(cur&&cur.plan&&cur.done.indexOf(o.date)<0){checkIn(cur);return}
-  var ev=clone(cur);if(!ev)return;if(ev.plan&&ev.done.indexOf(o.date)>-1)ev.reached=null;var i=ev.done.indexOf(o.date);if(i>-1)ev.done.splice(i,1);else ev.done.push(o.date);Store.put(normEvent(ev))}
+  var ev=clone(cur);if(!ev)return;if(ev.plan&&ev.done.indexOf(o.date)>-1)delete ev.reached;var i=ev.done.indexOf(o.date);if(i>-1)ev.done.splice(i,1);else ev.done.push(o.date);Store.put(normEvent(ev))}
 function occRow(o,opt){opt=opt||{};var ev=o.ev,meta=[h('span',{'class':'cl',text:catName(ev.cat)})];
   if(ev.place)meta.push(h('span',{text:'@ '+ev.place}));if(ev.rep.f!=='none')meta.push(h('span',{text:'↻ '+repText(ev)}));
   if(ev.remind>-1)meta.push(h('span',{text:'알림 '+REMIND.filter(function(x){return x[0]===ev.remind})[0][1]}));
@@ -1362,7 +1363,7 @@ function plans(){var m={};Store.list().forEach(function(ev){if(!ev.plan)return;v
     if((ev.updated||0)>=(p.metaT||0)){p.meta=ev.plan;p.metaT=ev.updated||0}p.blocks.push(ev)});
   return Object.keys(m).map(function(k){var p=m[k];p.blocks.sort(function(a,b){return (a.date+a.start)<(b.date+b.start)?-1:1});return planState(p)})}
 function planState(p){var M=p.meta,now=new Date(),reached=M.from-1,done=0;
-  p.blocks.forEach(function(ev){if(ev.done.indexOf(ev.date)>-1){done++;if(ev.reached!=null)reached=Math.max(reached,ev.reached)}});
+  p.blocks.forEach(function(ev){if(ev.done.indexOf(ev.date)>-1){done++;if(typeof ev.reached==='number')reached=Math.max(reached,ev.reached)}});
   p.reached=Math.min(M.to,reached);p.doneBlocks=done;p.remaining=Math.max(0,M.to-p.reached);
   p.pace=Math.max(0.25,(M.pace+(p.reached-(M.from-1)))/(1+done)); // 처음 정한 속도를 1블록처럼 섞어 천천히 배움
   p.future=p.blocks.filter(function(ev){return ev.done.indexOf(ev.date)<0&&blockEnd(ev)>now});
