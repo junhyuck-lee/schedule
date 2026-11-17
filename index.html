@@ -311,6 +311,19 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 .sm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--line-2)}
 .sm-row b{display:block;font-weight:600}.sm-row small{color:var(--text-3);font-size:12px}
 
+/* simple shell */
+body:not([data-view="list"]) #searchBox,body:not([data-view="list"]) #sBtn{display:none!important}
+#menuBtn{display:none!important}
+.home{display:flex;flex-direction:column;gap:16px;max-width:760px}
+.more-list{display:flex;flex-direction:column}
+.more-it{display:flex;align-items:center;gap:12px;padding:11px 6px;border:0;border-bottom:1px solid var(--line-2);background:transparent;text-align:left;border-radius:6px}
+.more-it:hover{background:var(--wash)}
+.more-it b{display:block;font-weight:600;font-size:14.5px}.more-it small{color:var(--text-3);font-size:12px}
+.more-ic{width:34px;height:34px;border-radius:8px;background:var(--wash);display:grid;place-items:center;color:var(--text-2);flex:none}
+.morebtn{align-self:flex-start;border:0;background:transparent;padding:4px 0;color:var(--text-2);font-size:13.5px;font-weight:600;white-space:pre}
+.morebtn:hover{color:var(--text)}
+.morebox{display:flex;flex-direction:column;gap:14px;border-top:1px solid var(--line-2);padding-top:14px}
+
 /* toasts */
 .toasts{position:fixed;right:20px;bottom:20px;z-index:50;display:flex;flex-direction:column;gap:8px;align-items:flex-end;max-width:calc(100% - 40px)}
 .toast{background:var(--ink);color:var(--on-ink);border-radius:10px;padding:10px 14px;display:flex;align-items:center;gap:12px;font-size:13.5px;
@@ -335,7 +348,7 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
   .search.show{display:block;position:absolute;left:14px;right:14px;top:100%;width:auto;margin-top:8px}
   .pager button{min-width:32px;padding:0 8px}
   .content{padding:14px 12px calc(96px + env(safe-area-inset-bottom))}
-  .tabbar{display:grid;grid-template-columns:repeat(6,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
+  .tabbar{display:grid;grid-template-columns:repeat(3,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
     border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
   .tabbar button{border:0;background:transparent;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--text-3)}
   .tabbar button[aria-current="page"]{color:var(--text);font-weight:600}
@@ -367,12 +380,9 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
     <div class="brand"><i aria-hidden="true">일</i>일정 관리</div>
     <button class="btn primary block" id="addBtn" type="button">+ 새 일정</button>
     <nav class="nav" id="nav" aria-label="보기"></nav>
-    <div class="mini" id="mini"></div>
-    <div><div class="sect-h"><span>종류</span><span id="catHint">이번 달</span></div><div class="cats" id="cats"></div></div>
-    <div><div class="sect-h"><span>과목</span><button type="button" class="sect-btn" id="subjMng">관리</button></div><div class="cats" id="subjList"></div></div>
+    <div hidden><div id="mini"></div><div id="cats"></div><div id="subjList"></div><button type="button" id="subjMng"></button>
+      <button class="btn ghost" id="exportBtn" type="button"></button><button class="btn ghost" id="notifBtn" type="button"></button></div>
     <div class="side-foot">
-      <button class="btn ghost" id="exportBtn" type="button"></button>
-      <button class="btn ghost" id="notifBtn" type="button"></button>
       <div class="status" id="status" data-s="wait" role="status">불러오는 중</div>
     </div>
   </aside>
@@ -690,26 +700,46 @@ var DL=null; // downloads capability (artifact)
 
 /* ================= rendering ================= */
 var rT=0;function refresh(){SUBJ.memo=null;cancelAnimationFrame(rT);rT=requestAnimationFrame(render)}
-function render(){renderNav();renderMini();renderCats();renderSubjList();renderTitle();
+function render(){document.body.dataset.view=S.view;renderNav();renderTitle();
   var v=$('view');v.textContent='';
   ({dash:viewDash,month:viewMonth,week:viewWeek,subjects:viewSubjects,subject:viewSubject,list:viewList,stats:viewStats})[S.view](v);
-  var rail=S.view==='month'||S.view==='week'||S.view==='list';
+  var rail=false;
   $('content').classList.toggle('with-rail',rail);$('rail').hidden=!rail;if(rail)renderRail($('rail'));
   $('pager').style.visibility=(S.view==='month'||S.view==='week')?'visible':'hidden';
   updateBell()}
 
-function renderNav(){var cur=S.view==='subject'?'subjects':S.view;[$('nav'),$('tabbar')].forEach(function(box){box.textContent='';
-  VIEWS.forEach(function(v){box.appendChild(h('button',{type:'button','aria-current':cur===v[0]?'page':null,innerHTML:svgIco(v[2])+'<span>'+v[1]+'</span>',
-    onclick:function(){setView(v[0])}}))})})}
+var NAV=[['dash','홈','M3 10.5L12 3l9 7.5V21h-6v-6H9v6H3z'],['stats','통계','M4 20V10M10 20V4M16 20v-7M22 20H2'],['more','더보기','M5 12h.01M12 12h.01M19 12h.01']];
+function renderNav(){var cur=S.view==='dash'||S.view==='stats'?S.view:'more';[$('nav'),$('tabbar')].forEach(function(box){box.textContent='';
+  NAV.forEach(function(v){box.appendChild(h('button',{type:'button','aria-current':cur===v[0]?'page':null,innerHTML:svgIco(v[2])+'<span>'+v[1]+'</span>',
+    onclick:function(){if(v[0]==='more')openMore();else setView(v[0])}}))})})}
+function openMore(){$('side').classList.remove('open');
+  var item=function(ico,label,desc,fn){return h('button',{type:'button','class':'more-it',onclick:function(){m.close();fn()}},
+    h('span',{'class':'more-ic',innerHTML:svgIco(ico)}),h('span',null,h('b',{text:label}),desc?h('small',{text:desc}):null))};
+  var V=function(k){return VIEWS.filter(function(x){return x[0]===k})[0][2]};
+  var list=h('div',{'class':'more-list'},
+    item(V('month'),'달력','월간 달력',function(){setView('month')}),
+    item(V('week'),'주간 시간표','시간대별로 보기',function(){setView('week')}),
+    item(V('subjects'),'과목','과목별 마감·공부',function(){setView('subjects')}),
+    item(V('list'),'검색 · 전체 목록','제목·과목·장소·메모 검색',function(){setView('list');setTimeout(function(){$('searchBox').classList.add('show');$('q').focus()},50)}),
+    item(ICON.xls,'Excel 내보내기 · 백업','',openExport),
+    item(ICON.bell,'알림','다가오는 알림 · 기기 알림 켜기',openBell),
+    item(V('subjects'),'과목 관리','과목 추가·빼기',openSubjManager),
+    Store.mode==='github'?item('M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.1-.4 6.4-1.5 6.4-7a5.4 5.4 0 0 0-1.5-3.8 5 5 0 0 0-.1-3.8s-1.2-.4-3.9 1.5a13.4 13.4 0 0 0-7 0C6.3 1.6 5.1 2 5.1 2a5 5 0 0 0-.1 3.8 5.4 5.4 0 0 0-1.5 3.8c0 5.4 3.3 6.6 6.4 7a3.4 3.4 0 0 0-.9 2.6V22','GitHub 연결 설정','',function(){showGhConnect(false)}):null);
+  var kinds=h('div',{'class':'cchips'});
+  CATS.forEach(function(c){var b=h('button',{type:'button','class':'cchip','data-c':c.k,'aria-pressed':String(!S.hidden[c.k]),text:c.n,onclick:function(){
+    if(S.hidden[c.k])delete S.hidden[c.k];else S.hidden[c.k]=1;lsSet('hidden',S.hidden);b.setAttribute('aria-pressed',String(!S.hidden[c.k]));refresh()}});kinds.appendChild(b)});
+  var m=modal({title:'더보기',small:true,body:h('div',{style:'display:flex;flex-direction:column;gap:16px'},list,
+    h('div',{'class':'f'},h('span',{'class':'fl',text:'보여 줄 종류'}),kinds),h('p',{'class':'note',text:'저장 상태: '+$('status').textContent})),
+    foot:[h('span',{'class':'sp'}),h('button',{type:'button','class':'btn',text:'닫기',onclick:function(){m.close()}})]})}
 function setView(v){S.view=v;lsSet('view',v);$('side').classList.remove('open');render();window.scrollTo(0,0)}
 function renderTitle(){var c=S.cursor,t='',sub='';
   if(S.view==='month'){t=c.getFullYear()+'년 '+(c.getMonth()+1)+'월';sub=occIn(keyOf(new Date(c.getFullYear(),c.getMonth(),1)),keyOf(new Date(c.getFullYear(),c.getMonth()+1,0))).length+'개 일정'}
   else if(S.view==='week'){var m=mondayOf(c),e=addDays(m,6);t=(m.getMonth()+1)+'월 '+m.getDate()+'일 – '+(e.getMonth()!==m.getMonth()?(e.getMonth()+1)+'월 ':'')+e.getDate()+'일';sub=m.getFullYear()+'년'}
-  else if(S.view==='dash'){t='대시보드';sub=fmtDate(todayKey(),true)}
+  else if(S.view==='dash'){t='오늘';sub=fmtDate(todayKey(),true)}
   else if(S.view==='subjects'){t='과목';sub='과목별로 모아 보기'}
   else if(S.view==='subject'){t=S.subj;sub='과목 보기'}
   else if(S.view==='list'){t=S.q?'검색: '+S.q:'다가오는 일정';sub=S.q?'지난 1년 ~ 앞으로 1년':'오늘부터 60일'}
-  else{t='통계';sub='완료율은 오늘까지의 일정 기준'}
+  else{t='통계';sub=''}
   $('vTitle').textContent=t;$('vSub').textContent=sub;document.title=t+' · 일정 관리'}
 
 function renderMini(){var box=$('mini');box.textContent='';
@@ -815,67 +845,33 @@ function chkBtn(o){return h('button',{type:'button','class':'chk',role:'checkbox
   innerHTML:'<svg viewBox="0 0 24 24"><path d="'+ICON.check+'"/></svg>',onclick:function(e){e.stopPropagation();toggleDone(o)}})}
 function toggleDone(o){var ev=clone(Store.get(o.ev.id));if(!ev)return;var i=ev.done.indexOf(o.date);if(i>-1)ev.done.splice(i,1);else ev.done.push(o.date);Store.put(normEvent(ev))}
 function sjTag(ev){var sj=subjOf(ev);return sj&&normS(sj)!==normS(ev.title)?sj:''}
-function occRow(o,opt){opt=opt||{};var ev=o.ev,sj=opt.noSubj?'':sjTag(ev),meta=[sj?h('span',{'class':'sj',text:sj}):null,h('span',{'class':'cl',text:catName(ev.cat)})].filter(Boolean);
-  if(ev.place)meta.push(h('span',{text:'@ '+ev.place}));if(ev.rep.f!=='none')meta.push(h('span',{text:'↻ '+repText(ev)}));
-  if(ev.remind>-1)meta.push(h('span',{text:'알림 '+REMIND.filter(function(x){return x[0]===ev.remind})[0][1]}));
+function occRow(o,opt){opt=opt||{};var ev=o.ev,sj=opt.noSubj?'':sjTag(ev),meta=[sj?h('span',{'class':'sj',text:sj}):null].filter(Boolean);
   if(opt.showDate)meta.unshift(h('span',{text:fmtDate(o.date)}));
   return h('div',{'class':'occ'+(o.done?' done':''),'data-c':ev.cat},chkBtn(o),
     h('div',{'class':'occ-t',text:timeText(ev)}),
     h('button',{type:'button','class':'occ-b',onclick:function(){openEditor(Store.get(ev.id),o.date)}},
-      h('div',{'class':'occ-n',text:ev.title}),h('div',{'class':'occ-m'},meta)))}
+      h('div',{'class':'occ-n',text:ev.title}),meta.length?h('div',{'class':'occ-m'},meta):null))}
 function card(title,sub,body,extra){return h('div',{'class':'card'},h('div',{'class':'card-h'},h('h2',{text:title}),extra||(sub?h('small',{text:sub}):null)),h('div',{'class':'card-b'},body))}
 function upcomingDdays(limit){var t=todayKey(),end=keyOf(addDays(new Date(),730)),out=[];
   Store.list().forEach(function(ev){if(!isDday(ev)||S.hidden[ev.cat])return;var ks=expand(ev,t,end);if(ks.length)out.push({ev:ev,date:ks[0],n:diffDays(new Date(),parseKey(ks[0]))})});
   out.sort(function(a,b){return a.n-b.n});return out.slice(0,limit||8)}
 function ddRow(x,opt){var sj=opt&&opt.noSubj?'':sjTag(x.ev);return h('div',{'class':'occ','data-c':x.ev.cat},
   h('button',{type:'button','class':'occ-b',onclick:function(){openEditor(Store.get(x.ev.id),x.date)}},
-    h('div',{'class':'occ-n',text:x.ev.title}),h('div',{'class':'occ-m'},sj?h('span',{'class':'sj',text:sj}):null,h('span',{'class':'cl',text:catName(x.ev.cat)}),h('span',{text:fmtDate(x.date)+(x.ev.allDay||!x.ev.start?'':' '+x.ev.start)}))),
+    h('div',{'class':'occ-n',text:x.ev.title}),h('div',{'class':'occ-m'},sj?h('span',{'class':'sj',text:sj}):null,h('span',{text:fmtDate(x.date)+(x.ev.allDay||!x.ev.start?'':' '+x.ev.start)}))),
   h('div',{'class':'dday'+(x.n<=3?' hot':x.n<=7?' near':''),text:ddText(x.n)}))}
 function agenda(list,emptyText,opt){var box=h('div');if(!list.length)box.appendChild(h('div',{'class':'empty',text:emptyText}));
   list.forEach(function(o){box.appendChild(occRow(o,opt))});return box}
 
 /* --- dashboard --- */
-function viewDash(v){
-  var t=todayKey(),now=new Date(),mon=mondayOf(now),sun=addDays(mon,6),mf=new Date(now.getFullYear(),now.getMonth(),1),ml=new Date(now.getFullYear(),now.getMonth()+1,0);
-  var today=occIn(t,t),week=occIn(keyOf(mon),keyOf(sun)),month=occIn(keyOf(mf),keyOf(ml));
-  var past=month.filter(function(o){return o.date<=t}),pdone=past.filter(function(o){return o.done}).length;
-  var wmin=week.reduce(function(s,o){return s+evDur(o.ev)},0),dd=upcomingDdays(8);
-  var kpi=function(k,val,unit,d){return h('div',{'class':'card kpi'},h('div',{'class':'k',text:k}),h('div',{'class':'v'},val,unit?h('small',{text:unit}):null),h('div',{'class':'d',text:d}))};
-  v.appendChild(h('div',{'class':'kpis'},
-    kpi('오늘 일정',String(today.length),'건',today.length?'완료 '+today.filter(function(o){return o.done}).length+'건 · 남은 '+today.filter(function(o){return !o.done}).length+'건':'오늘은 비어 있어요'),
-    kpi('이번 주 일정',String(week.length),'건','계획한 시간 '+(wmin?fmtDur(wmin):'0분')),
-    kpi('이번 달 완료율',past.length?String(Math.round(pdone/past.length*100)):'—',past.length?'%':'',past.length?'오늘까지 '+past.length+'건 중 '+pdone+'건 완료':'아직 지난 일정이 없어요'),
-    kpi('가장 가까운 D-day',dd.length?ddText(dd[0].n):'—','',dd.length?dd[0].ev.title:'일정에서 ‘D-day 표시’를 켜 보세요')));
-  // today + dday
-  var g1=h('div',{'class':'grid2'});
-  g1.appendChild(card('오늘 · '+fmtDate(t),today.length+'건',agenda(today,'오늘 예정된 일정이 없어요. + 새 일정으로 추가해 보세요.'),
+function viewDash(v){var t=todayKey(),today=occIn(t,t),done=today.filter(function(o){return o.done}).length;
+  var wrap=h('div',{'class':'home'});
+  wrap.appendChild(card('오늘 할 일',today.length?done+' / '+today.length+' 완료':'',agenda(today,'오늘은 일정이 없어요.'),
     h('button',{type:'button','class':'btn sm',text:'+ 추가',onclick:function(){openEditor(null,t)}})));
-  var ddBox=h('div');if(!dd.length)ddBox.appendChild(h('div',{'class':'empty',text:'D-day로 표시한 일정이 없어요. 시험·마감 일정을 열고 ‘D-day 표시’를 켜면 여기에 모여요.'}));
-  dd.forEach(function(x){ddBox.appendChild(ddRow(x))});
-  g1.appendChild(card('다가오는 D-day',dd.length?dd.length+'개':'',ddBox));
-  v.appendChild(g1);v.appendChild(h('div',{style:'height:16px'}));
-  // week glance + upcoming
-  var g2=h('div',{'class':'grid2'});
-  var wm=h('div',{'class':'week-mini'}),maxN=1,by={};
-  week.forEach(function(o){(by[o.date]=by[o.date]||[]).push(o)});for(var k in by)maxN=Math.max(maxN,by[k].length);
-  for(var i=0;i<7;i++)(function(d){var k=keyOf(d),list=by[k]||[],bars=h('div',{'class':'bars'}),cnt={};
-    list.forEach(function(o){cnt[o.ev.cat]=(cnt[o.ev.cat]||0)+1});
-    CATS.forEach(function(c){if(cnt[c.k])bars.appendChild(h('i',{'data-c':c.k,style:'height:'+(cnt[c.k]/maxN*84-2)+'px'}))});
-    var tipT=fmtDate(k)+'\n'+(list.length?CATS.filter(function(c){return cnt[c.k]}).map(function(c){return c.n+' '+cnt[c.k]+'건'}).join(', '):'일정 없음');
-    wm.appendChild(h('button',{type:'button','class':'wm'+(k===t?' today':''),'data-tip':tipT,'aria-label':tipT.replace('\n',': '),
-      onclick:function(){S.cursor=d;setView('week')}},h('span',{'class':'n',text:list.length}),bars,h('span',{'class':'l',text:DS[i]+' '+d.getDate()})))})(addDays(mon,i));
-  var legend=h('div',{'class':'occ-m',style:'margin-top:10px'});
-  CATS.forEach(function(c){if(week.some(function(o){return o.ev.cat===c.k}))legend.appendChild(h('span',{'data-c':c.k,style:'display:inline-flex;align-items:center;gap:5px',innerHTML:'<i style="width:8px;height:8px;border-radius:2px;background:var(--c);display:inline-block"></i>'+c.n}))});
-  g2.appendChild(card('이번 주 한눈에','날짜를 누르면 주간 보기',h('div',null,wm,legend)));
-  var up=occIn(keyOf(addDays(now,1)),keyOf(addDays(now,7)));
-  g2.appendChild(card('앞으로 7일',up.length+'건',groupByDate(up.slice(0,14),'다음 7일 동안 예정된 일정이 없어요.')));
-  v.appendChild(g2);
-  var ix=subjIndex();if(ix.names.length){v.appendChild(h('div',{style:'height:16px'}));
-    var sums=ix.names.map(subjSummary).sort(function(a,b){var x=a.dd[0]?a.dd[0].n:9999,y=b.dd[0]?b.dd[0].n:9999;return x-y||b.week.length-a.week.length}).slice(0,6);
-    var sg=h('div',{'class':'subjgrid'});sums.forEach(function(sm){sg.appendChild(subjCard(sm))});
-    v.appendChild(h('div',{'class':'card-h',style:'padding:0 2px 10px;border:0'},h('h2',{text:'과목별 현황'}),h('button',{type:'button','class':'btn sm',text:'전체 과목 보기',onclick:function(){setView('subjects')}})));
-    v.appendChild(sg)}
-}
+  var dd=upcomingDdays(50),b=h('div');
+  if(!dd.length)b.appendChild(h('div',{'class':'empty',text:'다가오는 과제·시험이 없어요.'}));
+  dd.slice(0,3).forEach(function(x){b.appendChild(ddRow(x))});
+  wrap.appendChild(card('다가오는 마감',dd.length>3?'가까운 3개 · 전체 '+dd.length+'개':'',b));
+  v.appendChild(wrap)}
 function groupByDate(list,emptyText,rowOpt){var box=h('div'),cur='',t=todayKey();if(!list.length)box.appendChild(h('div',{'class':'empty',text:emptyText}));
   list.forEach(function(o){if(o.date!==cur){cur=o.date;var n=diffDays(new Date(),parseKey(cur));
       box.appendChild(h('div',{'class':'dgrp'+(cur===t?' today':'')},h('span',{text:fmtDate(cur)}),h('span',{style:'color:var(--text-3);font-weight:500',text:n===0?'오늘':n===1?'내일':n>0?n+'일 후':(-n)+'일 전'})))}
@@ -966,45 +962,24 @@ function subjStats(st){var t=todayKey(),m={};st.all.forEach(function(o){var n=su
   return Object.keys(m).map(function(k){return m[k]}).sort(function(a,b){return b.n-a.n})}
 function viewStats(v){var st=computeStats();
   var segB=h('div',{'class':'seg',role:'group','aria-label':'기간'});
-  [['6m','최근 6개월'],['12m','최근 12개월'],['year','올해']].forEach(function(o){segB.appendChild(h('button',{type:'button','aria-pressed':String(S.statRange===o[0]),text:o[1],onclick:function(){S.statRange=o[0];render()}}))});
-  v.appendChild(h('div',{'class':'toolbar'},segB,h('span',{style:'flex:1'}),
-    h('button',{type:'button','class':'btn sm',text:S.showTable?'차트로 보기':'표로 보기',onclick:function(){S.showTable=!S.showTable;render()}}),
-    h('button',{type:'button','class':'btn sm',innerHTML:svgIco(ICON.xls)+'Excel로 내보내기',onclick:openExport})));
-  var totMin=st.all.reduce(function(s,o){return s+evDur(o.ev)},0),topCat=CATS.slice().sort(function(a,b){return (st.cat[b.k]||0)-(st.cat[a.k]||0)})[0];
+  [['6m','6개월'],['12m','12개월'],['year','올해']].forEach(function(o){segB.appendChild(h('button',{type:'button','aria-pressed':String(S.statRange===o[0]),text:o[1],onclick:function(){S.statRange=o[0];render()}}))});
+  v.appendChild(h('div',{'class':'toolbar'},segB));
+  var study=st.all.filter(function(o){return o.ev.cat==='work'}),studyMin=study.reduce(function(a,o){return a+evDur(o.ev)},0);
   var kpi=function(k,val,unit,d){return h('div',{'class':'card kpi'},h('div',{'class':'k',text:k}),h('div',{'class':'v'},val,unit?h('small',{text:unit}):null),h('div',{'class':'d',text:d}))};
-  v.appendChild(h('div',{'class':'kpis'},kpi('전체 일정',String(st.all.length),'건',st.months[0].full+' ~ '+st.months[st.months.length-1].full),
-    kpi('완료율',st.past?String(Math.round(st.done/st.past*100)):'—',st.past?'%':'',st.past?'지난 '+st.past+'건 중 '+st.done+'건 완료':'지난 일정 없음'),
-    kpi('계획한 시간',fmtHours(totMin),'','하루 평균 '+fmtDur(Math.round(totMin/Math.max(1,diffDays(st.months[0].f,new Date())+1)))),
-    kpi('가장 많은 종류',st.cat[topCat.k]?topCat.n:'—','',st.cat[topCat.k]?st.cat[topCat.k]+'건':'')));
-  if(S.showTable){var tb=h('table',{'class':'tbl'},h('thead',null,h('tr',null,['월','일정 수','지난 일정','완료','완료율','계획 시간'].map(function(x){return h('th',{text:x})}))));
-    var bd=h('tbody');st.months.forEach(function(m){bd.appendChild(h('tr',null,h('td',{text:m.full}),h('td',{text:m.count}),h('td',{text:m.past}),h('td',{text:m.done}),h('td',{text:m.rate==null?'—':m.rate+'%'}),h('td',{text:fmtDur(m.min)})))});
-    tb.appendChild(bd);v.appendChild(card('월별 요약','',tb));
-    var tc=h('table',{'class':'tbl'},h('thead',null,h('tr',null,['종류','일정 수','계획 시간'].map(function(x){return h('th',{text:x})}))));var bc=h('tbody');
-    CATS.forEach(function(c){bc.appendChild(h('tr',null,h('td',{text:c.n}),h('td',{text:st.cat[c.k]||0}),h('td',{text:fmtDur(st.catMin[c.k]||0)})))});tc.appendChild(bc);
-    v.appendChild(h('div',{style:'height:16px'}));v.appendChild(card('종류별','',tc));
-    var sbt=h('table',{'class':'tbl'},h('thead',null,h('tr',null,['과목','일정 수','완료','계획 시간'].map(function(x){return h('th',{text:x})}))));var sbb=h('tbody');
-    subjStats(st).forEach(function(r){sbb.appendChild(h('tr',null,h('td',{text:r.name}),h('td',{text:r.n}),h('td',{text:r.done+' / '+r.past}),h('td',{text:fmtDur(r.min)})))});sbt.appendChild(sbb);
-    v.appendChild(h('div',{style:'height:16px'}));v.appendChild(card('과목별','',sbt));return}
+  v.appendChild(h('div',{'class':'kpis'},
+    kpi('완료율',st.past?String(Math.round(st.done/st.past*100)):'—',st.past?'%':'',st.past?st.past+'건 중 '+st.done+'건 완료':'지난 일정 없음'),
+    kpi('공부 시간',fmtHours(studyMin),'',study.length+'회'),
+    kpi('전체 일정',String(st.all.length),'건',st.months[0].full+' ~ '+st.months[st.months.length-1].full)));
   var g=h('div',{'class':'grid2'});
-  var c1=h('div');g.appendChild(card('월별 일정 수','건',c1));
   var c2=h('div');g.appendChild(card('월별 완료율','오늘까지의 일정 기준',c2));
-  v.appendChild(g);v.appendChild(h('div',{style:'height:16px'}));
-  var g2=h('div',{'class':'grid2'});
-  var hb=h('div',{'class':'hb'}),maxC=Math.max.apply(null,CATS.map(function(c){return st.cat[c.k]||0}).concat([1]));
-  CATS.forEach(function(c){var n=st.cat[c.k]||0;hb.appendChild(h('div',{'class':'hb-r','data-c':c.k,'data-tip':c.n+'\n'+n+'건 · '+fmtDur(st.catMin[c.k]||0)},
-    h('span',{'class':'n',text:c.n}),h('div',{'class':'bar'},h('i',{style:'width:'+(n/maxC*100)+'%'})),h('span',{'class':'v',text:n+'건'})))});
-  g2.appendChild(card('종류별 일정','건수 · 막대에 올리면 시간',hb));
-  var c3=h('div');g2.appendChild(card('요일별 일정 수','건',c3));
-  v.appendChild(g2);
-  var ss=subjStats(st);if(ss.length){var sb=h('div',{'class':'hb'}),mx=Math.max.apply(null,ss.map(function(r){return r.n}).concat([1]));
-    ss.forEach(function(r){sb.appendChild(h('div',{'class':'hb-r sub','data-tip':r.name+'\n'+r.n+'건 · 완료 '+r.done+'/'+r.past+(r.min?' · '+fmtDur(r.min):'')},
-      h('span',{'class':'n',text:r.name}),h('div',{'class':'bar'},h('i',{style:'width:'+(r.n/mx*100)+'%'})),h('span',{'class':'v',text:r.n+'건'})))});
-    v.appendChild(h('div',{style:'height:16px'}));v.appendChild(card('과목별 일정','기간 내 건수 · 막대에 올리면 완료·시간',sb))}
-  requestAnimationFrame(function(){
-    barChart(c1,st.months.map(function(m){return {label:m.label,value:m.count,tip:m.full+'\n일정 '+m.count+'건 · 완료 '+m.done+'건'}}));
-    lineChart(c2,st.months.map(function(m){return {label:m.label,value:m.rate,tip:m.full+'\n'+(m.rate==null?'지난 일정 없음':'완료율 '+m.rate+'% ('+m.done+'/'+m.past+')')}}));
-    barChart(c3,DS.map(function(d,i){return {label:d,value:st.wd[i],tip:d+'요일\n일정 '+st.wd[i]+'건'}}))})}
-
+  var ss=subjStats(st),sb=h('div',{'class':'hb'});
+  if(!ss.length)sb.appendChild(h('div',{'class':'empty',text:'과목이 정해진 일정이 없어요.'}));
+  var mx=Math.max.apply(null,ss.map(function(r){return r.n}).concat([1]));
+  ss.forEach(function(r){sb.appendChild(h('div',{'class':'hb-r sub','data-tip':r.name+'\n'+r.n+'건 · 완료 '+r.done+'/'+r.past+(r.min?' · '+fmtDur(r.min):'')},
+    h('span',{'class':'n',text:r.name}),h('div',{'class':'bar'},h('i',{style:'width:'+(r.n/mx*100)+'%'})),h('span',{'class':'v',text:r.n+'건'})))});
+  g.appendChild(card('과목별 일정','막대에 올리면 완료·시간',sb));
+  v.appendChild(g);
+  requestAnimationFrame(function(){lineChart(c2,st.months.map(function(m){return {label:m.label,value:m.rate,tip:m.full+'\n'+(m.rate==null?'지난 일정 없음':'완료율 '+m.rate+'% ('+m.done+'/'+m.past+')')}}))})}
 // 4칸 눈금이 모두 정수로 떨어지는 최댓값 (예: 39 → 40, 7 → 8)
 function niceMax(v){var raw=Math.max(1,v)/4,p=Math.pow(10,Math.floor(Math.log10(raw))),n=raw/p,step=Math.max(1,Math.ceil((n<=1?1:n<=2?2:n<=5?5:10)*p));
   if(step*4<v)step=Math.ceil(v/4);return step*4}
@@ -1102,26 +1077,34 @@ function openEditor(ev,dateK,preset){
   var place=h('input',{type:'text','class':'in',value:e.place,placeholder:'예: 공학관 301호'});
   var note=h('textarea',{'class':'in',value:e.note,placeholder:'준비물, 링크, 세부 내용'});
   var doneChk=occDate?h('input',{type:'checkbox',checked:e.done.indexOf(occDate)>-1}):null;
-  var body=h('div',{style:'display:flex;flex-direction:column;gap:14px'},title,
-    h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'날짜'}),date),h('label',{'class':'switch',style:'height:38px'},allDay,'종일 일정')),
-    timeRow,
-    h('div',{'class':'f'},h('span',{'class':'fl',text:'종류'}),cats),
-    h('div',{'class':'f'},h('span',{'class':'fl',text:'과목'}),subjIn,dl),
+  // 자주 안 쓰는 항목은 '더보기' 안에 접어 둔다
+  var moreBox=h('div',{'class':'morebox'},
     h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'반복'}),freq),h('div',{'class':'f'},h('span',{'class':'fl',text:'알림'}),rem)),
     repBox,
     h('label',{'class':'switch'},dd,ddLab),
     h('div',{'class':'f'},h('span',{'class':'fl',text:'장소'}),place),
     h('div',{'class':'f'},h('span',{'class':'fl',text:'메모'}),note),
+    !isNew&&e.rep.f!=='none'?h('p',{'class':'note',text:'반복 일정을 고치면 모든 반복에 적용돼요. 하루만 빼려면 ‘삭제 → 이 날짜만’을 쓰세요.'}):null);
+  var setBits=[e.rep.f!=='none'?'반복':null,e.place?'장소':null,e.note?'메모':null].filter(Boolean);
+  var moreBtn=h('button',{type:'button','class':'morebtn','aria-expanded':'false'});
+  var showMore=function(on){moreBox.hidden=!on;moreBtn.setAttribute('aria-expanded',String(on));
+    moreBtn.textContent=(on?'접기 ▴':'더보기 ▾')+'  반복 · 알림 · 장소 · 메모'+(setBits.length&&!on?'  ('+setBits.join('·')+' 있음)':'')};
+  moreBtn.addEventListener('click',function(){showMore(moreBox.hidden)});showMore(!!preset.freq);
+  var body=h('div',{style:'display:flex;flex-direction:column;gap:14px'},title,
+    h('div',{'class':'row'},h('div',{'class':'f'},h('span',{'class':'fl',text:'날짜'}),date),h('label',{'class':'switch',style:'height:38px'},allDay,'종일 일정')),
+    timeRow,
+    h('div',{'class':'f'},h('span',{'class':'fl',text:'종류'}),cats),
+    h('div',{'class':'f'},h('span',{'class':'fl',text:'과목'}),subjIn,dl),
+    moreBtn,moreBox,
     doneChk?h('label',{'class':'switch'},doneChk,fmtDate(occDate)+' 일정 완료'):null,
-    !isNew&&e.rep.f!=='none'?h('p',{'class':'note',text:'반복 일정을 고치면 모든 반복에 적용돼요. 하루만 빼려면 ‘삭제 → 이 날짜만’을 쓰세요.'}):null,
     err);
   function save(){
     var t=title.value.trim();title.classList.toggle('err',!t);if(!t){err.textContent='제목을 입력해 주세요.';title.focus();return}
     if(!parseKey(date.value)){err.textContent='날짜를 선택해 주세요.';date.focus();return}
     if(!allDay.checked){var a=toMin(st.value),b=toMin(en.value);if(a==null){err.textContent='시작 시간을 입력하거나 ‘종일 일정’을 켜 주세요.';st.focus();return}
       if(b!=null&&b<=a){err.textContent='종료 시간이 시작 시간보다 늦어야 해요.';en.focus();return}}
-    if(freq.value==='weekly'&&!Object.keys(wset).length){err.textContent='반복할 요일을 하나 이상 골라 주세요.';return}
-    if(until.value&&until.value<date.value){err.textContent='반복 종료일이 시작 날짜보다 빨라요.';until.focus();return}
+    if(freq.value==='weekly'&&!Object.keys(wset).length){showMore(true);err.textContent='반복할 요일을 하나 이상 골라 주세요.';return}
+    if(until.value&&until.value<date.value){showMore(true);err.textContent='반복 종료일이 시작 날짜보다 빨라요.';until.focus();return}
     e.title=t;e.date=date.value;e.allDay=allDay.checked;e.start=allDay.checked?'':st.value;e.end=allDay.checked?'':en.value;
     e.rep={f:freq.value,n:Math.max(1,Math.min(99,parseInt(nIn.value,10)||1)),wd:freq.value==='weekly'?Object.keys(wset).map(Number).sort():[],until:freq.value==='none'?'':until.value};
     e.remind=+rem.value;e.dday=DDAY_CATS[e.cat]?e.dday:dd.checked;e.subj=subjIn.value.trim();e.place=place.value.trim();e.note=note.value;
