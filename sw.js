@@ -1,6 +1,6 @@
 /* 일정 관리 서비스 워커: 앱 화면을 캐시해 오프라인에서도 열리게 하고, 기기 알림을 표시한다.
    /api 요청은 캐시하지 않는다(항상 서버의 최신 데이터). */
-const CACHE = 'schedule-v6';
+const CACHE = 'schedule-v7';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
