@@ -313,6 +313,7 @@ textarea.in{height:auto;min-height:80px;padding:8px 10px;resize:vertical;line-he
 
 /* simple shell */
 body:not([data-view="list"]) #searchBox,body:not([data-view="list"]) #sBtn{display:none!important}
+@media (max-width:860px){body[data-view="list"] #searchBox{display:block;position:relative;left:auto;right:auto;top:auto;width:auto;flex:1;margin:0}body[data-view="list"] #sBtn{display:none!important}body[data-view="list"] .ttl{display:none}}
 #menuBtn{display:none!important}
 .home{display:flex;flex-direction:column;gap:16px;max-width:760px}
 .more-list{display:flex;flex-direction:column}
@@ -348,7 +349,7 @@ body:not([data-view="list"]) #searchBox,body:not([data-view="list"]) #sBtn{displ
   .search.show{display:block;position:absolute;left:14px;right:14px;top:100%;width:auto;margin-top:8px}
   .pager button{min-width:32px;padding:0 8px}
   .content{padding:14px 12px calc(96px + env(safe-area-inset-bottom))}
-  .tabbar{display:grid;grid-template-columns:repeat(3,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
+  .tabbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);
     border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
   .tabbar button{border:0;background:transparent;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--text-3)}
   .tabbar button[aria-current="page"]{color:var(--text);font-weight:600}
@@ -708,8 +709,8 @@ function render(){document.body.dataset.view=S.view;renderNav();renderTitle();
   $('pager').style.visibility=(S.view==='month'||S.view==='week')?'visible':'hidden';
   updateBell()}
 
-var NAV=[['dash','홈','M3 10.5L12 3l9 7.5V21h-6v-6H9v6H3z'],['stats','통계','M4 20V10M10 20V4M16 20v-7M22 20H2'],['more','더보기','M5 12h.01M12 12h.01M19 12h.01']];
-function renderNav(){var cur=S.view==='dash'||S.view==='stats'?S.view:'more';[$('nav'),$('tabbar')].forEach(function(box){box.textContent='';
+var NAV=[['dash','홈','M3 10.5L12 3l9 7.5V21h-6v-6H9v6H3z'],['month','달력','M4 5h16v15H4zM4 9h16M9 3v4M15 3v4'],['list','목록','M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01'],['stats','통계','M4 20V10M10 20V4M16 20v-7M22 20H2'],['more','더보기','M5 12h.01M12 12h.01M19 12h.01']];
+function renderNav(){var cur=S.view==='week'?'month':(S.view==='dash'||S.view==='stats'||S.view==='month'||S.view==='list')?S.view:'more';[$('nav'),$('tabbar')].forEach(function(box){box.textContent='';
   NAV.forEach(function(v){box.appendChild(h('button',{type:'button','aria-current':cur===v[0]?'page':null,innerHTML:svgIco(v[2])+'<span>'+v[1]+'</span>',
     onclick:function(){if(v[0]==='more')openMore();else setView(v[0])}}))})})}
 function openMore(){$('side').classList.remove('open');
@@ -717,10 +718,7 @@ function openMore(){$('side').classList.remove('open');
     h('span',{'class':'more-ic',innerHTML:svgIco(ico)}),h('span',null,h('b',{text:label}),desc?h('small',{text:desc}):null))};
   var V=function(k){return VIEWS.filter(function(x){return x[0]===k})[0][2]};
   var list=h('div',{'class':'more-list'},
-    item(V('month'),'달력','월간 달력',function(){setView('month')}),
-    item(V('week'),'주간 시간표','시간대별로 보기',function(){setView('week')}),
     item(V('subjects'),'과목','과목별 마감·공부',function(){setView('subjects')}),
-    item(V('list'),'검색 · 전체 목록','제목·과목·장소·메모 검색',function(){setView('list');setTimeout(function(){$('searchBox').classList.add('show');$('q').focus()},50)}),
     item(ICON.xls,'Excel 내보내기 · 백업','',openExport),
     item(ICON.bell,'알림','다가오는 알림 · 기기 알림 켜기',openBell),
     item(V('subjects'),'과목 관리','과목 추가·빼기',openSubjManager),
@@ -878,7 +876,10 @@ function groupByDate(list,emptyText,rowOpt){var box=h('div'),cur='',t=todayKey()
     box.appendChild(occRow(o,rowOpt))});return box}
 
 /* --- month --- */
-function viewMonth(v){
+function calToggle(v){var sg=h('div',{'class':'seg',role:'group','aria-label':'달력 보기'});
+  [['month','월간'],['week','주간']].forEach(function(o){sg.appendChild(h('button',{type:'button','aria-pressed':String(S.view===o[0]),text:o[1],onclick:function(){if(S.view!==o[0])setView(o[0])}}))});
+  v.appendChild(h('div',{'class':'toolbar',style:'margin-bottom:12px'},sg))}
+function viewMonth(v){calToggle(v);
   var c=S.cursor,first=new Date(c.getFullYear(),c.getMonth(),1),last=new Date(c.getFullYear(),c.getMonth()+1,0),start=mondayOf(first);
   var weeks=Math.ceil((wdOf(first)+last.getDate())/7),endD=addDays(start,weeks*7-1),tk=todayKey(),by={};
   occIn(keyOf(start),keyOf(endD)).forEach(function(o){(by[o.date]=by[o.date]||[]).push(o)});
@@ -901,7 +902,7 @@ function openDay(k){var list=occIn(k,k),body=agenda(list,'이 날은 일정이 �
 
 /* --- week --- */
 var PX=46;
-function viewWeek(v){
+function viewWeek(v){calToggle(v);
   var mon=mondayOf(S.cursor),tk=todayKey(),list=occIn(keyOf(mon),keyOf(addDays(mon,6))),sH=7,eH=24;
   list.forEach(function(o){var a=toMin(o.ev.start);if(!o.ev.allDay&&a!=null)sH=Math.min(sH,Math.floor(a/60))});
   var wrap=h('div',{'class':'wwrap'}),g=h('div',{'class':'wk',style:'--hours:'+(eH-sH)+';--px:'+PX+'px'});
